@@ -1,0 +1,52 @@
+{% extends 'bootstrap/base.html' %}
+{% import "bootstrap/wtf.html" as wtf %}
+
+{% block content %}
+{% include "header.html" %}
+
+<!-- Page Header -->
+<!--<header class="masthead" style="background-image: url('https://images.unsplash.com/photo-1470092306007-055b6797ca72?ixlib=rb-1.2.1&auto=format&fit=crop&w=668&q=80')">-->
+<header class="masthead" style="background: green">
+    <div class="overlay"></div>
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-8 col-md-10 mx-auto">
+
+                <div class="post-heading">
+                    <h1>{{item.item_name}}</h1>
+                    <h2 class="subheading">{{item.price}}</h2>
+                    <h2 class="post-subtitle">
+                      <img src="{{item.img_url}}" width="200" height="200">
+                    </h2>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Item Content -->
+<article>
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-8 col-md-10 mx-auto">
+                {% if current_user.is_authenticated %}
+                <div class="clearfix">
+                    {{ wtf.quick_form(form, novalidate=True, button_map={"submit": "primary"}) }}
+
+
+                </div>
+                {% endif %}
+
+
+
+
+
+            </div>
+        </div>
+    </div>
+</article>
+
+<hr>
+{% include "footer.html" %}
+{% endblock %}
