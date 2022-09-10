@@ -1,7 +1,3 @@
-{% extends 'bootstrap/base.html' %}
-{% import "bootstrap/wtf.html" as wtf %}
-
-{% block content %}
 {% include "header.html" %}
 
 
@@ -20,26 +16,33 @@
   </header>
 
 <!-- My Cart Items -->
-<article>
+<!--<article>-->
     <div class="container">
         <div class="row">
             <div class="col-lg-8 col-md-10 mx-auto">
 
 
-                <div class="col-lg-8 col-md-10 mx-auto comment">
-                    <table border="1" color="orange" width="700">
-                    <tr color="gray">
+                <div>
+                    <table border="1" width="700">
+                    <tr bgcolor="#f2efea" height="50">
                       <td width="100" align="center">Order ID</td>
-                      <td width="200" align="center">Item</td>
-                      <td width="100" align="center">Price<br>(Count)</td>
+                      <td width="300" align="center">Item</td>
+                      <td width="100" align="center">Count</td>
                       <td width="100" align="center">Total</td>
                       <td width="150" align="center">Order Date</td>
                     </tr>
                     {% for item in items: %}
                       <tr>
                         <td align="center">{{ item.id }}</td>
-                        <td align="center">{{item.cart_item.item_name}}<br><img src="{{ item.cart_item.img_url }}" width="100", height="100"  /></td>
-                        <td align="center">${{item.price}}<br>({{item.count}})</td>
+                        <td align="center"  valign="middle">
+                            <table border="0" width="100%">
+                                <tr valign="top">
+                                    <td align="center"><img src="{{ item.cart_item.img_url }}" width="100", height="100"  /></td>
+                                    <td padding="15px">{{item.cart_item.item_name}}<br>${{item.price}}</td>
+                                </tr>
+                            </table>
+                        </td>
+                        <td align="center">{{item.count}}</td>
                         <td align="center">${{ '%.2f'%(item.count * item.price) }}</td>
                         <td align="center">{{ item.date[:10] }}</td>
                       </tr>
@@ -53,9 +56,7 @@
         </div>
 
     </div>
-</article>
-
-  <hr>
+<!--</article>-->
+<hr>
 
 {% include "footer.html" %}
-{% endblock %}
