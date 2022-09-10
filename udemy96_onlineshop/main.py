@@ -1,20 +1,28 @@
-from flask import Flask, render_template, redirect, url_for, flash, abort
+from flask import Flask, render_template, redirect, url_for, flash, abort, jsonify, request
 from flask_bootstrap import Bootstrap
 from flask_ckeditor import CKEditor
-import datetime
+from datetime import datetime
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import relationship
 from flask_login import UserMixin, login_user, LoginManager, login_required, current_user, logout_user
-from flask_gravatar import Gravatar
 from forms import LoginForm, RegisterForm, CreateItemForm, ShowItemForm, ShowCartForm
+import json
+import stripe
+
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'onlineshop'
 ckeditor = CKEditor(app)
 Bootstrap(app)
-gravatar = Gravatar(app, size=100, rating='g', default='retro', force_default=False, force_lower=False, use_ssl=False, base_url=None)
+
+app.config['STRIPE_PUBLIC_KEY'] = 'pk_test_51LZU7tJDdM0RhJG9gAMKGIyZw1hxtfaFB35oIo3QV2LqL2mRBE7FwN6MCH016qY2OlkWI4AMW69RG53Rqgfaefby00DushM0qZ'
+app.config['STRIPE_SECRET_KEY'] = 'sk_test_51LZU7tJDdM0RhJG99TJR35Wx0BslTGtpLs49xLx4Tj8XSlIWm6wLQM25bWHCS2Du4Cpyp3iGsqVY5E77IIUbrMBW00VRtpCX8f'
+
+stripe.api_key = app.config['STRIPE_SECRET_KEY']
+YOUR_DOMAIN = 'http://localhost:5000'
+
 
 ##CONNECT TO DB
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///onlineshop.db'
@@ -79,6 +87,10 @@ def admin_only(f):
 def get_all_item():
     items = ShopItem.query.all()
     return render_template("index.html", all_item=items, current_user=current_user)
+
+@app.route('/pricing-page')
+def pricing_page():
+    return render_template("sample_pricing_page.html", current_user=current_user)
 
 
 @app.route('/register', methods=["GET", "POST"])
@@ -160,7 +172,7 @@ def show_item(item_id):
                 count=form.count.data,
                 status=0,
                 price=requested_item.price,
-                date=datetime.datetime.now().strftime("%Y-%m-%d %X"),
+                date=datetime.now().strftime("%Y-%m-%d %X"),
                 # date=date.today().strftime("%B %d, %Y"),
             )
             db.session.add(new_cart)
@@ -170,8 +182,23 @@ def show_item(item_id):
     return render_template("item.html", item=requested_item, form=form, current_user=current_user)
 
 
-@app.route("/delete_cart/<int:cart_id>")
-def delete_cart(cart_id):
+@app.route("/cart_save_item/<int:cart_id>", methods=["GET", "POST"])
+def save_for_later(cart_id):
+    rows_updated = ShopCart.query.filter_by(id=cart_id, status=0).update(
+        dict(status=2, date=datetime.now().strftime("%Y-%m-%d %X")))
+    db.session.commit()
+    return redirect(url_for("show_cart"))
+
+
+@app.route("/cart_move_item/<int:cart_id>", methods=["GET", "POST"])
+def move_to_cart(cart_id):
+    rows_updated = ShopCart.query.filter_by(id=cart_id, status=2).update(dict(status=0, date=datetime.now().strftime("%Y-%m-%d %X")))
+    db.session.commit()
+    return redirect(url_for("show_cart"))
+
+
+@app.route("/cart_delete_item/<int:cart_id>")
+def cart_item_delete(cart_id):
     item_to_delete = ShopCart.query.get(cart_id)
     db.session.delete(item_to_delete)
     db.session.commit()
@@ -179,21 +206,100 @@ def delete_cart(cart_id):
 
 
 @app.route("/cart", methods=["GET", "POST"])
+@login_required
 def show_cart():
     form = ShowCartForm()
     my_cart_item = ShopCart.query.filter_by(user_id=current_user.id, status=0)
+    my_save_item = ShopCart.query.filter_by(user_id=current_user.id, status=2)
+
+    global payable_amount
+    global cart_list
+
+    cart_list = ""
+    total_price = 0
+
+    # 데이터를 장바구니에 넘길때 카운트 할 수 있게 리스트 타입으로 넘겨주기 위해..
+    list_cart_item = []
+    for data in my_cart_item:
+        list_cart_item.append(data)
+        total_price += data.price * 100 * data.count
+        print(data.price * data.count)
+        print(total_price)
+
+    # payable_amount = total_price + (0.05 * total_price) - 1
+    payable_amount = int(total_price)
+
+    # payable_amount = round(total_price, 2)
+    cart_list = ', '.join([data.cart_item.item_name + ' ' + str(data.count) + '($' + str(data.cart_item.price) +')' for data in my_cart_item])
+
+    print(payable_amount)
+    print(cart_list)
+
+
+    list_save_item = []
+    for data in my_save_item:
+        list_save_item.append(data)
 
     if form.validate_on_submit():
-
-        if (not current_user) or (not current_user.is_authenticated):
-            flash("You need to login or register!")
-            return redirect(url_for("login"))
-
-        rows_updated = ShopCart.query.filter_by(user_id=current_user.id, status=0).update(dict(status = 1, date = datetime.datetime.now().strftime("%Y-%m-%d %X")))
+        rows_updated = ShopCart.query.filter_by(user_id=current_user.id, status=0).update(dict(status = 1, date = datetime.now().strftime("%Y-%m-%d %X")))
         db.session.commit()
         return redirect(url_for("get_all_ordered"))
 
-    return render_template("cart.html", items=my_cart_item, form=form, current_user=current_user)
+    return render_template("cart.html", items=list_cart_item, save_items=list_save_item, form=form, current_user=current_user,
+                           public_key=app.config['STRIPE_PUBLIC_KEY'], payable_amount=payable_amount)
+
+
+
+# Book_Mart 참고 ============================================================================================
+@app.route('/create-checkout-session', methods=['POST'])
+@login_required
+def create_checkout_session():
+    checkout_session = stripe.checkout.Session.create(
+        payment_method_types=['card'],
+        line_items=[{
+            'price_data': {
+                'currency': 'usd',
+                'product_data': {
+                    'name': cart_list,
+                },
+                'unit_amount': payable_amount,
+            },
+            'quantity': 1,
+        }],
+        mode='payment',
+        # success_url="https://book--mart.herokuapp.com/success",
+        # cancel_url="https://book--mart.herokuapp.com/failed"
+        success_url = url_for("succeed", _external=True) + '?session_id={CHECKOUT_SESSION_ID}',
+        cancel_url = url_for("failed", _external=True),
+
+    )
+    response = jsonify({'id': checkout_session.id})
+    return response
+
+    # return redirect(checkout_session.url, code=303)
+
+
+@app.route("/succeed")
+@login_required
+def succeed():
+    global cart_list
+    cart_list = ""
+
+    rows_updated = ShopCart.query.filter_by(user_id=current_user.id, status=0).update(dict(status = 1, date = datetime.now().strftime("%Y-%m-%d %X")))
+    db.session.commit()
+
+    return render_template("pay_succeed.html", current_user=current_user)
+
+
+@app.route("/failed")
+@login_required
+def failed():
+    return render_template('pay_failed.html', current_user=current_user)
+
+# Book_Mart 참고 end  ============================================================================================
+
+
+
 
 
 
@@ -201,7 +307,6 @@ def show_cart():
 def get_all_ordered():
     items = ShopCart.query.filter_by(user_id=current_user.id, status=1)
     return render_template("orderhistory.html", items=items, current_user=current_user)
-
 
 
 @app.route("/about")
